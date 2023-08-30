@@ -36,6 +36,9 @@ mr_pl = function(g_matrix0, exposure_matrix0, outcome, gwas_assoc, cutoff, wcc, 
     coef_name = coef_name[-which(coef_name == '(Intercept)')]
   }
   
+  outcome_predict = predict(reg.mod, newx = pls.pred, type = 'response', s=bestlam)  #predict the outcome
+  R2_outcome = cor(outcome[,1], outcome_predict[,1])   # the prediction R2 of the outcome
+  
   #lasso.proj.p ---
   out.lasso.proj = lasso.proj(x = pls.pred, y = outcome)
   p = as.vector(out.lasso.proj$pval)
@@ -58,7 +61,7 @@ mr_pl = function(g_matrix0, exposure_matrix0, outcome, gwas_assoc, cutoff, wcc, 
   
   #record results
   result = list()
-  result[['exposure_results']] = data.frame(image_name=coef_name, causal_estimate = coef_val, lasso_proj_p = p)
+  result[['main_results']] = data.frame(exposure_name=coef_name, causal_estimate = coef_val, lasso_proj_p = p)
   result[['wcc']] = wcc
   result[['c']] = c
   result[['cutoff']] = cutoff
@@ -66,6 +69,7 @@ mr_pl = function(g_matrix0, exposure_matrix0, outcome, gwas_assoc, cutoff, wcc, 
   result[['pleiotropy_test.p']] = sargan.p
   result[['iv_include']] = iv_include
   result[['exposure_include']] = exposure_include
+  result[['R2']] = R2_outcome
   
   return(result)
 }
