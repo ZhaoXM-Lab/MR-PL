@@ -4,7 +4,7 @@ library(sem)
 
 
 cutoff = 5e-8
-total_setting = 56
+total_setting = 48
 total_replication = 100
 
 g_matrix0 = load("stimulate/genotype/g_matrix.10000sample_5000snp.RData")
