@@ -1,5 +1,6 @@
 rm(list = ls())
 setwd("/home1/yanganyi/Desktop/MR")
+setwd('F:/类脑/1_实操文件/MR')
 library(pls)
 library(parallel)
 library(glmnet)
@@ -42,7 +43,8 @@ run_each_setting = function(setting){
   mse.1 = data.frame(stringsAsFactors = F); coef.1 = data.frame(stringsAsFactors = F)
   mse.2 = data.frame(stringsAsFactors = F); coef.2 = data.frame(stringsAsFactors = F)
   mse.3 = data.frame(stringsAsFactors = F); coef.3 = data.frame(stringsAsFactors = F)
-  mse.4 = data.frame(stringsAsFactors = F); coef.4 = data.frame(stringsAsFactors = F) 
+  mse.4 = data.frame(stringsAsFactors = F); coef.4 = data.frame(stringsAsFactors = F)
+  lasso.proj.p = data.frame(stringsAsFactors = F)
   
   
   for (idx in 1:total_replication){
@@ -74,7 +76,7 @@ run_each_setting = function(setting){
     tmp.mse = data.frame(setting=setting, replicate = idx, mse_beta = mse_beta, rmse_beta = sqrt(mse_beta))
     mse.1 = rbind(mse.1, tmp.mse)
     ###2).causal effect
-    tmp.coef = data.frame(setting=setting, replicate = rep(idx, 20), image_name=coef_name[-1], coef=coef_val[-1]) #????ֵ
+    tmp.coef = data.frame(setting=setting, replicate = rep(idx, 20), image_name=coef_name[-1], coef=coef_val[-1])
     tmp.coef$true_beta = beta_xToy 
     coef.1 = rbind(coef.1, tmp.coef)
     
@@ -94,11 +96,10 @@ run_each_setting = function(setting){
     } else{
       select_exposure_idx = match(coef_name, reg.coef@Dimnames[[1]])
     }
-
+    
     ###1).mse
     full_coef_val = rep(0, 20); full_coef_val[select_exposure_idx] = coef_val[-1]
     mse_beta = mean((full_coef_val - beta_xToy) ^ 2)
-    #mse_beta = mean((coef_val[-1] - beta_xToy[select_exposure_idx]) ^ 2) 
     tmp.mse = data.frame(setting=setting, replicate = idx, mse_beta = mse_beta, rmse_beta = sqrt(mse_beta))
     mse.2 = rbind(mse.2, tmp.mse)
     ###2).causal effect
@@ -106,6 +107,15 @@ run_each_setting = function(setting){
     tmp.coef$true_beta = beta_xToy
     coef.2 = rbind(coef.2, tmp.coef) 
     
+    #lasso.proj.p--
+    outcome_predict = predict(reg.mod, newx = pls.pred, s=bestlam)  #predict the outcome
+    residuals = outcome_matrix[,1] - outcome_predict[,1]
+    sd = sd(residuals)
+    
+    outlasso = lasso.proj(x = pls.pred, y = outcome_matrix, betainit=full_coef_val, sigma = sd)
+    p = as.vector(outlasso$pval)
+    tmp.p = data.frame(setting=setting, replicate = rep(idx, 20), image_name=1:20, lasso_proj_p=p)
+    lasso.proj.p = rbind(lasso.proj.p, tmp.p)
     
     ################################ 3.Elastic net ######################################
     alphalist = seq(0.05, 0.95, by=0.05)
@@ -176,6 +186,7 @@ run_each_setting = function(setting){
   write.table(mse.4, paste('stimulate/results/stimulation_2/pls+lars/pls+lars.mse.setting_',setting,'.txt', sep=''), sep="\t", row.names = F, quote = F)
   write.table(coef.4, paste('stimulate/results/stimulation_2/pls+lars/pls+lars.coef.setting_',setting,'.txt', sep=''), sep="\t", row.names = F, quote = F)
 
+  write.table(lasso.proj.p, paste('stimulate/results/stimulation_2/pls+lasso/pls+lasso.proj_p.setting_',setting,'.txt', sep=''), sep="\t", row.names = F, quote = F)
   cat('setting_', setting, 'is finished.', '\n')
   
   return(0)

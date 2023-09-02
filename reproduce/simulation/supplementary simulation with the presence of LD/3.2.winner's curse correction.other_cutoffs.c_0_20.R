@@ -13,7 +13,9 @@ rm(g_matrix)
 
 pred_pls = function(plsdata1_Z, plsdata2_Z){
   if (ncol(plsdata1_Z) > 20) {
-    best_ncomp = 20
+    pls.fit = plsr(plsdata2_Z ~ plsdata1_Z, ncomp = 20, validation="CV", jackknife=TRUE)
+    RMSE = RMSEP(pls.fit)
+    best_ncomp = which.min(RMSE$val [2,1,-1]) 
   }
   else {best_ncomp = ncol(plsdata1_Z)}
   
@@ -77,6 +79,18 @@ run_each = function(setting, cutoff, c){
       } else{
         select_exposure_idx = as.numeric(gsub('Y', '', select_exposure_idx))
       }
+      
+      
+      #lasso.proj.p---
+      beta = rep(0, length(exposure_include))
+      beta[ select_exposure_idx ] = coef_val[-1]
+      
+      outcome_predict = predict(reg.mod, newx = pls.pred, s=bestlam)  #predict the outcome
+      residuals = outcome_matrix[,1] - outcome_predict[,1]
+      sd = sd(residuals)
+      
+      outlasso = lasso.proj(x = pls.pred, y = outcome_matrix, betainit = beta, sigma = sd)
+      p = as.vector(outlasso$pval)
     }
 
     if(ncol(pls.pred) == 1){
@@ -87,6 +101,7 @@ run_each = function(setting, cutoff, c){
       result = result$coefficients
       coef_val = as.vector(result[, 'Estimate'])
       select_exposure_idx =  exposure_include
+      p = as.vector(result[2, 'Pr(>|t|)'])
     }
     
     ###1).mse
@@ -106,19 +121,12 @@ run_each = function(setting, cutoff, c){
     tmp.coef$true_beta = beta_xToy
     coef.2 = rbind(coef.2, tmp.coef)
     
-    
-    ################################ lasso.proj.p######################################
-    outlasso = lasso.proj(x = pls.pred, y = outcome_matrix)  
-    p = as.vector(outlasso$pval)
-    
-    full_p = rep(1, 20) 
-    full_p[exposure_include] = p 
+    ###3)p
+    full_p = rep(NA, 20)
+    full_p[exposure_include] = p  
     if_include = rep(FALSE, 20); if_include[exposure_include] = TRUE
-    
     tmp.p = data.frame(setting=setting, replicate=idx, image_name=1:20, lasso_proj_p=full_p, if_include=if_include)
     lasso.proj.p = rbind(lasso.proj.p, tmp.p)
-    
-    cat('setting_', setting,',', 'replication_',idx, 'is finished.', '\n')
   } 
   
   write.table(mse.2, paste('stimulate/results/winners curse/stimulation_4/correct for Nimage/mse.cutoff_',cutoff,'.c_',c,'.setting_', 
@@ -142,13 +150,10 @@ library(foreach)
 
 for (cutoff in cutoff_set){
   for (c in c_set){
-    cl = makeCluster(20) 
+    cl = makeCluster(10) 
     registerDoParallel(cl)
     result = foreach(setting = 1:total_setting, .combine = 'rbind') %dopar% run_each(setting, cutoff, c)
     cat(', cutoff=', cutoff, 'c=', c, 'is OK.\n')
     stopCluster(cl)
   }
 }
-
-
-

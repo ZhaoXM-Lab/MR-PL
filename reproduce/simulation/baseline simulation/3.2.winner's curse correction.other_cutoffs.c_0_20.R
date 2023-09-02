@@ -11,6 +11,7 @@ g_matrix0 = eval(parse(text = g_matrix0))
 rm(g_matrix)
 
 
+
 pred_pls = function(plsdata1_Z, plsdata2_Z){
   if (ncol(plsdata1_Z) > 20) {
     pls.fit = plsr(plsdata2_Z ~ plsdata1_Z, ncomp = 20, validation="CV", jackknife=TRUE)
@@ -21,7 +22,7 @@ pred_pls = function(plsdata1_Z, plsdata2_Z){
   
   pls.fit = plsr(plsdata2_Z ~ plsdata1_Z, ncomp = best_ncomp, validation="none")
   coef = as.matrix(as.data.frame(coef(pls.fit)))
-
+  
   pls.pred = as.data.frame((predict(pls.fit, plsdata1_Z, ncomp = best_ncomp)))
   names(pls.pred) = gsub(paste('.',best_ncomp, ' comps',sep=''), '', names(pls.pred))
   return(pls.pred)
@@ -31,14 +32,15 @@ pred_pls = function(plsdata1_Z, plsdata2_Z){
 
 run_each = function(setting, cutoff, c){
   library(pls)
-  #library(parallel)
   library(glmnet)
-  #library(lars)
+  library(hdi)
   
   mse.2 = data.frame(stringsAsFactors = F); coef.2 = data.frame(stringsAsFactors = F)
+  lasso.proj.p = data.frame(stringsAsFactors = F)
   
   for (idx in 1:total_replication){
     load(paste("stimulate/exposure-outcome/stimulation_2/setting_",setting,'/',idx,".exposure-outcome-iv.RData",sep = ''))
+    
     
     result_snp1 = result_snp[result_snp$Pr...t.. < cutoff, ]
     
@@ -64,22 +66,33 @@ run_each = function(setting, cutoff, c){
     set.seed(1)
     grid = 10 ^ seq(10, -2, length=100)
     
+    
     ################################ 2.lasso ######################################
-    #如果pls.pred有超过一列，那么作lasso
     if(ncol(pls.pred) > 1){
-      reg.mod = glmnet(pls.pred, outcome_matrix, alpha=1, lambda=grid)   #Y和X回归 统一不加截距项
+      reg.mod = glmnet(pls.pred, outcome_matrix, alpha=1, lambda=grid) 
       cv.out = cv.glmnet(pls.pred, outcome_matrix, alpha=1)
       bestlam = cv.out$lambda.min
       
-      reg.coef = predict(reg.mod, type = 'coefficients', s=bestlam) #查看影像指标的系数
+      reg.coef = predict(reg.mod, type = 'coefficients', s=bestlam)
       coef_name = reg.coef@Dimnames[[1]] [reg.coef@i +1]
-      coef_val = reg.coef@x 
+      coef_val = reg.coef@x
       if ("(Intercept)" %in% coef_name){
         select_exposure_idx = coef_name[-1]
         select_exposure_idx = as.numeric(gsub('Y', '', select_exposure_idx))
       } else{
         select_exposure_idx = as.numeric(gsub('Y', '', select_exposure_idx))
       }
+      
+      #lasso.proj.p---
+      beta = rep(0, length(exposure_include))
+      beta[ select_exposure_idx ] = coef_val[-1]
+      
+      outcome_predict = predict(reg.mod, newx = pls.pred, s=bestlam)  #predict the outcome
+      residuals = outcome_matrix[,1] - outcome_predict[,1]
+      sd = sd(residuals)
+      
+      outlasso = lasso.proj(x = pls.pred, y = outcome_matrix, betainit = beta, sigma = sd)
+      p = as.vector(outlasso$pval)
     }
 
     if(ncol(pls.pred) == 1){
@@ -90,15 +103,16 @@ run_each = function(setting, cutoff, c){
       result = result$coefficients
       coef_val = as.vector(result[, 'Estimate'])
       select_exposure_idx =  exposure_include
+      p = as.vector(result[2, 'Pr(>|t|)'])
     }
     
     ###1).mse
     full_coef_val = rep(0, 20)
-    full_coef_val[exposure_include] = 0 
-    full_coef_val[ exposure_include[select_exposure_idx] ] = coef_val[-1]
+    full_coef_val[exposure_include] = 0
+    full_coef_val[ exposure_include[select_exposure_idx] ] = coef_val[-1] 
     if_include = rep(FALSE, 20); if_include[exposure_include] = TRUE
     
-    mse_beta = mean((full_coef_val - beta_xToy) ^ 2) 
+    mse_beta = mean((full_coef_val - beta_xToy) ^ 2)
     mse_beta_analyse = mean((full_coef_val[exposure_include] - beta_xToy[exposure_include]) ^ 2)
     tmp.mse = data.frame(setting=setting, replicate=idx, cutoff=cutoff, c=c, 
                          mse_beta=mse_beta, mse_beta_analyse=mse_beta_analyse)
@@ -106,41 +120,43 @@ run_each = function(setting, cutoff, c){
     
     ###2).causal effect
     tmp.coef = data.frame(setting=setting, replicate=idx, image_name=1:20, coef=full_coef_val, if_include=if_include)
-    tmp.coef$true_beta = beta_xToy
-    coef.2 = rbind(coef.2, tmp.coef) 
+    tmp.coef$true_beta = beta_xToy 
+    coef.2 = rbind(coef.2, tmp.coef)
     
-    cat('setting_', setting,',', 'replication_',idx, 'is finished.', '\n')
+    ###3)p
+    full_p = rep(NA, 20)
+    full_p[exposure_include] = p  
+    if_include = rep(FALSE, 20); if_include[exposure_include] = TRUE
+    tmp.p = data.frame(setting=setting, replicate=idx, image_name=1:20, lasso_proj_p=full_p, if_include=if_include)
+    lasso.proj.p = rbind(lasso.proj.p, tmp.p)
   } 
   
   write.table(mse.2, paste('stimulate/results/winners curse/stimulation_2/correct for Nimage/mse.cutoff_',cutoff,'.c_',c,'.setting_', 
                            setting,'.txt', sep=''), sep="\t", row.names = F, quote = F)
   write.table(coef.2, paste('stimulate/results/winners curse/stimulation_2/correct for Nimage/coef.cutoff_',cutoff,'.c_',c,'.setting_', 
                            setting,'.txt', sep=''), sep="\t", row.names = F, quote = F)
-  cat('setting_', setting, 'is finished.', '\n')
+  write.table(lasso.proj.p, paste('stimulate/results/winners curse/stimulation_2/proj_p/proj_p.cutoff_',cutoff,'.c_',c,'.setting_', 
+                                  setting,'.txt', sep=''), sep="\t", row.names = F, quote = F)
   return(0)
 }
 
 
-
-
 total_setting = 48
 total_replication = 100
-cutoff_set = c(5e-8) 
-c_set = seq(0, 40, by=5)
+cutoff_set = c(5e-4, 5e-5, 5e-6, 5e-7, 5e-9, 5e-10)
+c_set = c(0, 20) 
+
 
 
 library(doParallel)
 library(foreach)
+cl = makeCluster(10) 
+registerDoParallel(cl)
 
-for (setting in c(1:total_setting)){
-  for (cutoff in cutoff_set){
-    cl = makeCluster(9) 
-    registerDoParallel(cl)
-    
-    result = foreach(c = c_set, .combine = 'rbind') %dopar% run_each(setting, cutoff, c)
-    cat('setting_',setting, ', cutoff=', cutoff, 'is OK.\n')
-    stopCluster(cl)
+for (cutoff in cutoff_set){
+  for (c in c_set){
+    result = foreach(setting = 1:total_setting, .combine = 'rbind') %dopar% run_each(setting, cutoff, c)
+    cat(', cutoff=', cutoff, 'c=', c, 'is OK.\n')
   }
 }
-
-
+stopCluster(cl)

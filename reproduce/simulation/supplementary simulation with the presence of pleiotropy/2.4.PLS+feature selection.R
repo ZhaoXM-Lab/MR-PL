@@ -44,6 +44,7 @@ run_each_setting = function(setting){
   mse.2 = data.frame(stringsAsFactors = F); coef.2 = data.frame(stringsAsFactors = F)
   mse.3 = data.frame(stringsAsFactors = F); coef.3 = data.frame(stringsAsFactors = F)
   mse.4 = data.frame(stringsAsFactors = F); coef.4 = data.frame(stringsAsFactors = F) 
+  lasso.proj.p = data.frame(stringsAsFactors = F)
   sargan.1 = data.frame(stringsAsFactors = F); sargan.2 = data.frame(stringsAsFactors = F)
   sargan.3 = data.frame(stringsAsFactors = F); sargan.4 = data.frame(stringsAsFactors = F)
   
@@ -74,7 +75,7 @@ run_each_setting = function(setting){
     coef_val = reg.coef@x
     
     ##Sargan test ##----------------------------------
-    outcome_predicted = predict(reg.mod, type = 'response', s = bestlam, newx = pls.pred)
+    outcome_predicted = predict(reg.mod, s = bestlam, newx = pls.pred)
     residual = outcome_matrix - outcome_predicted
     
     reg.sargan = lm(residual ~ g_matrix)  #regress the residuals on the full set of instruments
@@ -114,11 +115,9 @@ run_each_setting = function(setting){
     }
     
     ##Sargan test ##----------------------------------
-    outcome_predicted = predict(reg.mod, type = 'response', s = bestlam, newx = pls.pred)
-    residual = outcome_matrix - outcome_predicted
-    
-    reg.sargan = lm(residual ~ g_matrix)  #regress the residuals on the full set of instruments
-    
+    outcome_predict = predict(reg.mod, s = bestlam, newx = pls.pred)
+    residuals = outcome_matrix[,1] - outcome_predict[,1]
+    reg.sargan = lm(residuals ~ g_matrix)  #regress the residuals on the full set of instruments
     R2 = summary(reg.sargan)$r.squared
     sargan.stat = nrow(g_matrix) * R2
     df = ncol(g_matrix) - ncol(pls.pred)
@@ -137,6 +136,17 @@ run_each_setting = function(setting){
     ###3.p-value of sargan test
     tmp.sargan.2 = data.frame(setting=setting, replicate=idx, sargan_p = sargan.p)
     sargan.2 = rbind(sargan.2, tmp.sargan.2)
+    
+    
+    #lasso.proj.p--
+    outcome_predict = predict(reg.mod, newx = pls.pred, s = bestlam)  #predict the outcome
+    residuals = outcome_matrix[,1] - outcome_predict[,1]
+    sd = sd(residuals)
+    
+    outlasso = lasso.proj(x = pls.pred, y = outcome_matrix, betainit=full_coef_val, sigma = sd)
+    p = as.vector(outlasso$pval)
+    tmp.p = data.frame(setting=setting, replicate = rep(idx, 20), image_name=1:20, lasso_proj_p=p)
+    lasso.proj.p = rbind(lasso.proj.p, tmp.p)
     
     
     ################################ 3.Elastic net ######################################
@@ -165,7 +175,7 @@ run_each_setting = function(setting){
     }
     
     ##Sargan test ##----------------------------------
-    outcome_predicted = predict(reg.mod, type = 'response', s = bestlam, newx = pls.pred)
+    outcome_predicted = predict(reg.mod, s = bestlam, newx = pls.pred)
     residual = outcome_matrix - outcome_predicted
     
     reg.sargan = lm(residual ~ g_matrix)  #regress the residuals on the full set of instruments
@@ -242,6 +252,7 @@ run_each_setting = function(setting){
   write.table(coef.4, paste('stimulate/results/stimulation_8/pls+lars/u_tao',u_tao,"sd_tao",sd_tao,'/pls+lars.coef.setting_',setting,'.txt', sep=''), sep="\t", row.names = F, quote = F)
   write.table(sargan.4, paste('stimulate/results/stimulation_8/pls+lars/u_tao',u_tao,"sd_tao",sd_tao,'/pls+lars.sargan.setting_',setting,'.txt', sep=''), sep="\t", row.names = F, quote = F)
   
+  write.table(lasso.proj.p, paste('stimulate/results/stimulation_8/pls+lasso/pls+lasso.proj_p.setting_',setting,'.txt', sep=''), sep="\t", row.names = F, quote = F)
   cat('setting_', setting, 'is finished.', '\n')
   
   return(0)

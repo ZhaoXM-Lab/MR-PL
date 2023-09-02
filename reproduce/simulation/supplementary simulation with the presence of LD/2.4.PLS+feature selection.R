@@ -41,7 +41,7 @@ run_each_setting = function(setting){
   mse.2 = data.frame(stringsAsFactors = F); coef.2 = data.frame(stringsAsFactors = F)
   mse.3 = data.frame(stringsAsFactors = F); coef.3 = data.frame(stringsAsFactors = F)
   mse.4 = data.frame(stringsAsFactors = F); coef.4 = data.frame(stringsAsFactors = F) 
-  
+  lasso.proj.p = data.frame(stringsAsFactors = F)
   
   for (idx in 1:total_replication){
     load(paste("stimulate/exposure-outcome/stimulation_4/setting_",setting,'/',idx,".exposure-outcome-iv.RData",sep = ''))
@@ -101,6 +101,16 @@ run_each_setting = function(setting){
     tmp.coef = data.frame(setting=setting, replicate = rep(idx, 20), image_name=1:20, coef=full_coef_val)
     tmp.coef$true_beta = beta_xToy
     coef.2 = rbind(coef.2, tmp.coef)
+    
+    #lasso.proj.p--
+    outcome_predict = predict(reg.mod, newx = pls.pred, s=bestlam)  #predict the outcome
+    residuals = outcome_matrix[,1] - outcome_predict[,1]
+    sd = sd(residuals)
+    
+    outlasso = lasso.proj(x = pls.pred, y = outcome_matrix, betainit=full_coef_val, sigma = sd)
+    p = as.vector(outlasso$pval)
+    tmp.p = data.frame(setting=setting, replicate = rep(idx, 20), image_name=1:20, lasso_proj_p=p)
+    lasso.proj.p = rbind(lasso.proj.p, tmp.p)
     
     
     ################################ 3.Elastic net ######################################
@@ -172,7 +182,7 @@ run_each_setting = function(setting){
   write.table(mse.4, paste('stimulate/results/stimulation_4/pls+lars/pls+lars.mse.setting_',setting,'.txt', sep=''), sep="\t", row.names = F, quote = F)
   write.table(coef.4, paste('stimulate/results/stimulation_4/pls+lars/pls+lars.coef.setting_',setting,'.txt', sep=''), sep="\t", row.names = F, quote = F)
   
-  cat('setting_', setting, 'is finished.', '\n')
+  write.table(lasso.proj.p, paste('stimulate/results/stimulation_4/pls+lasso/pls+lasso.proj_p.setting_',setting,'.txt', sep=''), sep="\t", row.names = F, quote = F)
   
   return(0)
 }
@@ -182,7 +192,7 @@ run_each_setting = function(setting){
 library(doParallel)
 library(foreach)
 
-cl = makeCluster(15) 
+cl = makeCluster(10) 
 registerDoParallel(cl)
 result = foreach(setting = 1:total_setting, .combine = 'rbind') %dopar% run_each_setting(setting)
 stopCluster(cl)

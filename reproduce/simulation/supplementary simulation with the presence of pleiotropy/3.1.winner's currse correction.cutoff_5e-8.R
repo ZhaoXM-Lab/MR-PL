@@ -66,37 +66,37 @@ run_each = function(setting, cutoff, c){
     grid = 10 ^ seq(10, -2, length=100)
     
     ################################ 2.lasso ######################################
-    if(ncol(pls.pred) > 1){
-      reg.mod = glmnet(pls.pred, outcome_matrix, alpha=1, lambda=grid)  
-      cv.out = cv.glmnet(pls.pred, outcome_matrix, alpha=1)
-      bestlam = cv.out$lambda.min
-      
-      reg.coef = predict(reg.mod, type = 'coefficients', s=bestlam)
-      coef_name = reg.coef@Dimnames[[1]] [reg.coef@i +1]
-      coef_val = reg.coef@x  
-      if ("(Intercept)" %in% coef_name){
-        select_exposure_idx = coef_name[-1]
-        select_exposure_idx = as.numeric(gsub('Y', '', select_exposure_idx))
-      } else{
-        select_exposure_idx = as.numeric(gsub('Y', '', select_exposure_idx))
-      }
+    reg.mod = glmnet(pls.pred, outcome_matrix, alpha=1, lambda=grid)  
+    cv.out = cv.glmnet(pls.pred, outcome_matrix, alpha=1)
+    bestlam = cv.out$lambda.min
+    
+    reg.coef = predict(reg.mod, type = 'coefficients', s = bestlam)
+    coef_name = reg.coef@Dimnames[[1]] [reg.coef@i +1]
+    coef_val = reg.coef@x  
+    if ("(Intercept)" %in% coef_name){
+      select_exposure_idx = coef_name[-1]
+      select_exposure_idx = as.numeric(gsub('Y', '', select_exposure_idx))
+    } else{
+      select_exposure_idx = as.numeric(gsub('Y', '', select_exposure_idx))
     }
-
-    if(ncol(pls.pred) == 1){
-      data = data.frame(y = outcome_matrix, x = pls.pred)
-      reg = lm(paste(names(data)[1], '~', names(data)[2], sep=''), data)
-      
-      result = summary(reg)
-      result = result$coefficients
-      coef_val = as.vector(result[, 'Estimate'])
-      select_exposure_idx =  exposure_include
-    }
+    
+    #lasso.proj.p---
+    beta = rep(0, length(exposure_include))
+    beta[ select_exposure_idx ] = coef_val[-1]
+    
+    outcome_predict = predict(reg.mod, newx = pls.pred, s = bestlam)  #predict the outcome
+    residuals = outcome_matrix[,1] - outcome_predict[,1]
+    sd = sd(residuals)
+    
+    outlasso = lasso.proj(x = pls.pred, y = outcome_matrix, betainit= beta, sigma = sd)
+    p = as.vector(outlasso$pval)
+    
     
     ##Sargan test ##----------------------------------
-    outcome_predicted = predict(reg.mod, type = 'response', s = bestlam, newx = pls.pred)
-    residual = outcome_matrix - outcome_predicted
+    outcome_predict = predict(reg.mod, s = bestlam, newx = pls.pred)
+    residuals = outcome_matrix - outcome_predict
     
-    reg.sargan = lm(residual ~ g_matrix)  #regress the residuals on the full set of instruments
+    reg.sargan = lm(residuals ~ g_matrix)  #regress the residuals on the full set of instruments
     
     R2 = summary(reg.sargan)$r.squared
     sargan.stat = nrow(g_matrix) * R2
@@ -122,11 +122,16 @@ run_each = function(setting, cutoff, c){
     tmp.coef$true_beta = beta_xToy
     coef.2 = rbind(coef.2, tmp.coef)
     
-    ###3).记录sargan
+    ###3).sargan
     tmp.sargan.2 = data.frame(setting=setting, replicate=idx, sargan_p = sargan.p)
     sargan.2 = rbind(sargan.2, tmp.sargan.2)
     
-    cat('setting_', setting,',', 'replication_',idx, 'is finished.', '\n')
+    ###4)p
+    full_p = rep(NA, 20)
+    full_p[exposure_include] = p
+    if_include = rep(FALSE, 20); if_include[exposure_include] = TRUE
+    tmp.p = data.frame(setting=setting, replicate = rep(idx, 20), image_name=1:20, lasso_proj_p=full_p, if_include=if_include)
+    lasso.proj.p = rbind(lasso.proj.p, tmp.p)
   } 
   
   write.table(mse.2, paste('stimulate/results/winners curse/stimulation_8/u_tao',u_tao,"sd_tao",sd_tao,'/mse.cutoff_',cutoff,'.c_',c,'.setting_', 
@@ -135,6 +140,8 @@ run_each = function(setting, cutoff, c){
                            setting,'.txt', sep=''), sep="\t", row.names = F, quote = F)
   write.table(sargan.2, paste('stimulate/results/winners curse/stimulation_8/u_tao',u_tao,"sd_tao",sd_tao,'/sargan.cutoff_',cutoff,'.c_',c,'.setting_', 
                             setting,'.txt', sep=''), sep="\t", row.names = F, quote = F)
+  write.table(lasso.proj.p, paste('stimulate/results/winners curse/stimulation_8/proj_p/proj_p.cutoff_',cutoff,'.c_',c,'.setting_', 
+                                  setting,'.txt', sep=''), sep="\t", row.names = F, quote = F)
   
   cat('setting_', setting, 'is finished.', '\n')
   return(0)
