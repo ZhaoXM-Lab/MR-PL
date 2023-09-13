@@ -126,7 +126,7 @@ save_imagingMR_LAS_results <- function(setting, idx, dataX, dataY, dataM, p, q, 
     uniMR.fullresults <- vector("list", q) ## MR fitting results for one SNP vs. all fa
     for (k in 1:q) {
       MRobj = mr_ivw(mr_input(bx = ulmres.med[[k]][h,1], bxse=ulmres.med[[k]][h,2],
-                              by = ulmres.out[h,1], byse = ulmres.out[h,2]))  #IVW方法
+                              by = ulmres.out[h,1], byse = ulmres.out[h,2]))
       uniMR[k,1] = MRobj$Estimate
       uniMR[k,2] = MRobj$StdError
       uniMR[k,3] = MRobj$CILower
@@ -160,7 +160,7 @@ save_imagingMR_LAS_results <- function(setting, idx, dataX, dataY, dataM, p, q, 
   ######################### 3. LAS submatrix #########################
   ## save the data for passing to Matlab 
   write.table(comb2_neglogP, row.names=F, col.names=F, sep=",",
-              file=paste("MR_software/ImagingMR-LAS/trial_results/las_input.setting_",setting,".", idx,".csv", sep="")) #不区分的话并行会打架
+              file=paste("MR_software/ImagingMR-LAS/trial_results/las_input.setting_",setting,".", idx,".csv", sep=""))
   
   ## use LAS matlab function in the mtba package 
   code <- c("cd 'F:/类脑/1_实操文件/MR/MR_software/ImagingMR-LAS/trial_results/';", 
